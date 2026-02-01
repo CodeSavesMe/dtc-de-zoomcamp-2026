@@ -1,0 +1,102 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docker-ingestion-pipeline"
+version = "0.1.0"
+description = "NYC Taxi ingestion pipeline (CSV/TSV/Parquet -> Postgres) for DTC DE Zoomcamp Module 01"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "akbar" }]
+keywords = ["data-engineering", "etl", "postgres", "docker", "dtc", "zoomcamp"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Operating System :: OS Independent",
+]
+
+# Core runtime dependencies
+dependencies = [
+  "click>=8.1",
+  "python-dotenv>=1.0",
+  "loguru>=0.7",
+  "sqlalchemy>=2.0",
+  "psycopg2-binary>=2.9",
+  "pandas>=2.0",
+  "numpy>=2.0",
+  "pyarrow>=14.0",
+  "requests>=2.31",
+  "tqdm>=4.66",
+]
+
+[project.scripts]
+dtc-ingest = "main:cli"
+
+# Modern UV dependency groups (PEP 735)
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+  "mypy>=1.10",
+  "types-requests>=2.31.0",
+  "pre-commit>=4.5.1",
+]
+
+# ------------------------------------------------------------------------------
+# setuptools: make package discovery explicit (fix uv editable build error)
+# ------------------------------------------------------------------------------
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["docker_ingestion_pipeline*"]
+exclude = ["data*", "logs*", "sql*", "terraform*", "tests*"]
+
+[tool.uv]
+managed = true
+
+# ------------------------------------------------------------------------------
+# Ruff (lint + format)
+# ------------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["data", "logs", ".venv", "terraform"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["docker_ingestion_pipeline"]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+# ------------------------------------------------------------------------------
+# Mypy (pragmatic strict)
+# ------------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+no_implicit_optional = true
+check_untyped_defs = true
+ignore_missing_imports = true
+pretty = true
+
+# ------------------------------------------------------------------------------
+# Pytest
+# ------------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra -q --cov=docker_ingestion_pipeline"
+filterwarnings = ["ignore::DeprecationWarning"]

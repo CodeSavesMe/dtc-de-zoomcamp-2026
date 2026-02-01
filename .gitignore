@@ -1,0 +1,32 @@
+# --- Do not track per-module .gitignore files ---
+**/.gitignore
+!.gitignore
+
+# --- Secrets ---
+**/.env
+**/.env.*
+!**/.env.example
+
+# --- Python / tooling ---
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/*.egg-info/
+**/build/
+**/dist/
+**/.venv/
+
+# --- Local data / logs ---
+**/data/
+**/logs/
+
+# --- IDEs ---
+.vscode/
+.idea/
+
+# --- Terraform state/cache (keep *.tf + lock file) ---
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*

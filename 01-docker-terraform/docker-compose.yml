@@ -1,0 +1,116 @@
+# ------------------------------------------------------------------------------
+# DTC Module 01 — Docker + Terraform (Local Stack, laptop-friendly)
+#
+# PURPOSE
+# - Run a Postgres warehouse for NYC Taxi tables
+# - Build/run the ingestion CLI in a Python container
+# - Optionally run pgAdmin for quick browsing
+#
+# NETWORKING NOTES
+# - Inside Docker network:
+#     Host = db
+#     Port = 5432
+#
+# - From host machine:
+#     Host = localhost
+#     Port = ${DB_PORT} (e.g. 5432 or 5433)
+#
+# PROFILES
+# - Default: db + app
+# - tools  : pgAdmin
+# ------------------------------------------------------------------------------
+
+name: dtc-module-01
+
+volumes:
+  ny_taxi_postgres_data:
+  app_data:
+  app_logs:
+
+networks:
+  dtc-net:
+    driver: bridge
+
+services:
+  # 1) Postgres (ETL target)
+  db:
+    image: postgres:16
+    container_name: pg_ny_taxi_01
+    env_file: [ .env ]
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_PORT:-5432}:5432"   # host -> container
+    volumes:
+      - ny_taxi_postgres_data:/var/lib/postgresql/data
+    # Optional tuning (safe defaults for laptops)
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=128MB"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "effective_cache_size=256MB"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks: [dtc-net]
+    cpus: 0.75
+    mem_limit: 900m
+
+  # 2) Ingestion CLI container
+  app:
+    build:
+      context: .
+      dockerfile: docker_ingestion_pipeline/Dockerfile
+    image: ingestion_pipeline:v1.0.1
+    container_name: ingestion_app
+    env_file: [ .env ]
+    environment:
+      # Container-to-container DB connection
+      DB_HOST: db
+      DB_PORT: "5432"
+      # keep DATA_DIR consistent with mounts (optional; defaults to project_root/data if unset)
+      DATA_DIR: /app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Keep host folders usable; also supports logs/app.log as in README
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # Optional named volumes if you prefer (not used if bind mounts above exist)
+      # - app_data:/app/data
+      # - app_logs:/app/logs
+    networks: [dtc-net]
+    restart: unless-stopped
+    command: ["sleep", "infinity"]
+    cpus: 0.5
+    mem_limit: 512m
+
+  # 3) pgAdmin (optional)
+  # pgadmin:
+  #   image: dpage/pgadmin4:latest
+  #   container_name: pgadmin
+  #   env_file: [ .env ]
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+  #     PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+  #   ports:
+  #     - "${PGADMIN_PORT:-8085}:80"
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+  #   networks: [dtc-net]
+  #   profiles: ["tools"]
+  #   cpus: 0.5
+  #   mem_limit: 512m

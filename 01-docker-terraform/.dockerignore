@@ -1,0 +1,78 @@
+# ------------------------------------------------------------------------------
+# .dockerignore — Module 01 (Docker + Terraform)
+# Keep Docker build context small and deterministic.
+# ------------------------------------------------------------------------------
+
+# ---- VCS ----
+.git
+.gitignore
+
+# ---- Python caches / local env ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.cache/
+*.log
+
+# Virtual environments
+.venv/
+venv/
+env/
+.uv/
+.uv-cache/
+uv-cache/
+uv.lock
+
+# Build artifacts / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# ---- IDEs / Editors ----
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# macOS / Windows noise
+.DS_Store
+Thumbs.db
+
+# ---- Project runtime outputs ----
+logs/
+data/
+*.parquet
+*.csv
+*.tsv
+*.gz
+*.zip
+
+# ---- Terraform ----
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/crash.log
+terraform/crash.*.log
+
+# ---- Tests ----
+tests/
+
+# ---- Documentation / misc ----
+*.md
+!01-README.md
+
+# ---- Secrets ----
+.env
+.env.*
+!.env.example
