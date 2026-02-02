@@ -1,0 +1,87 @@
+# flows/01_ingestion/backfill_multi_taxi.yml
+
+id: backfill_multi_taxi
+namespace: dtc.module02
+description: >
+  Backfill multiple taxi types (green/yellow) for a set of months by calling backfill_months_for_taxi.
+  Runs sequentially per taxi type to keep resource usage stable on laptops.
+
+labels:
+  app: ny-taxi
+  component: backfill
+
+inputs:
+  # List of taxi datasets to backfill (DataTalksClub release folders).
+  - id: taxis
+    type: ARRAY
+    itemType: STRING
+    defaults: ["green", "yellow"]
+    required: true
+
+  # Target year shared across all taxi types.
+  - id: year
+    type: INT
+    defaults: 2021
+    required: true
+
+  # Month list must use 2-digit strings ("01".."12") to match dataset naming.
+  - id: months
+    type: ARRAY
+    itemType: STRING
+    defaults: ["01","02","03","04","05","06","07","08","09","10","11","12"]
+    required: true
+
+  # Behavior when a target table already exists (applied per month via subflows).
+  - id: if_exists
+    type: SELECT
+    values: ["skip", "replace", "fail", "append"]
+    defaults: "skip"
+    required: true
+
+  # Keep downloaded files inside the task container (usually false).
+  - id: keep_local
+    type: BOOL
+    defaults: false
+    required: true
+
+  # Loader tuning forwarded to subflows.
+  - id: loader_chunk_size
+    type: INT
+    defaults: 50000
+    required: true
+
+  - id: loader_batch_size
+    type: INT
+    defaults: 100000
+    required: true
+
+tasks:
+  - id: foreach_taxi
+    type: io.kestra.plugin.core.flow.ForEach
+    # Iterate over taxi types (one subflow run per taxi).
+    values: "{{ inputs.taxis }}"
+
+    # Run sequentially to keep resource usage predictable on laptops.
+    concurrencyLimit: 1
+
+    tasks:
+      - id: backfill_one_taxi
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: dtc.module02
+        flowId: backfill_months_for_taxi
+
+        # wait=true: parent waits for the taxi backfill to complete
+        # transmitFailed=true: fail-fast if any taxi backfill fails
+        wait: true
+        transmitFailed: true
+
+        inputs:
+          # Current taxi from the ForEach iterator
+          taxi: "{{ taskrun.value }}"
+          year: "{{ inputs.year }}"
+          months: "{{ inputs.months }}"
+
+          if_exists: "{{ inputs.if_exists }}"
+          keep_local: "{{ inputs.keep_local }}"
+          loader_chunk_size: "{{ inputs.loader_chunk_size }}"
+          loader_batch_size: "{{ inputs.loader_batch_size }}"
