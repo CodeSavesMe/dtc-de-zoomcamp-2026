@@ -1,6 +1,8 @@
 <div align="center">
 
 # Module 02 — Workflow Orchestration (Kestra) + Postgres (NYC Taxi)
+## Ingestion runner: [Module 01 ingestion pipeline](../01-docker-terraform/)
+
 
 ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
 ![Postgres](https://img.shields.io/badge/postgres-%23316192.svg?style=for-the-badge&logo=postgresql&logoColor=white)
