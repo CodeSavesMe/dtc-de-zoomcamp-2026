@@ -1,0 +1,25 @@
+# flows/02_ops/schedule_timezone_newyork.yml
+
+id: schedule_timezone_newyork
+namespace: dtc.module02.ops
+description: >
+  Example flow to demonstrate Schedule trigger timezone configuration.
+  This runs at 09:00 AM New York time (America/New_York).
+
+labels:
+  app: ny-taxi
+  component: ops
+  purpose: timezone-demo
+
+triggers:
+  - id: daily_9am_ny
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 9 * * *"
+    timezone: America/New_York
+
+tasks:
+  - id: log_run_time
+    type: io.kestra.plugin.core.log.Log
+    message: >
+      Trigger fired. Flow timezone is America/New_York.
+      ExecutionId={{ execution.id }}, Timestamp={{ execution.startDate }}
