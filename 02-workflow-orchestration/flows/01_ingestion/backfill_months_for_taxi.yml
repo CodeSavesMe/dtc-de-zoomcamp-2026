@@ -1,0 +1,85 @@
+# flows/01_ingestion/backfill_months_for_taxi.yml
+
+id: backfill_months_for_taxi
+namespace: dtc.module02
+description: >
+  Backfill multiple months for a single taxi type by calling ingest_ny_taxi.
+  Runs sequentially (concurrencyLimit=1) for laptop-friendly stability.
+
+labels:
+  app: ny-taxi
+  component: backfill
+
+inputs:
+  - id: taxi
+    type: SELECT
+    values: ["yellow", "green"]
+    defaults: "green"
+    required: true
+
+  - id: year
+    type: INT
+    defaults: 2021
+    required: true
+
+  # Month list must use 2-digit strings ("01".."12") to match dataset naming.
+  - id: months
+    type: ARRAY
+    itemType: STRING
+    defaults: ["01","02","03","04","05","06","07","08","09","10","11","12"]
+    required: true
+
+  # Behavior when the target table already exists (applied per month).
+  - id: if_exists
+    type: SELECT
+    values: ["skip", "replace", "fail", "append"]
+    defaults: "skip"
+    required: true
+
+  # Keep downloaded files inside the task container (usually false).
+  - id: keep_local
+    type: BOOL
+    defaults: false
+    required: true
+
+  # Loader tuning forwarded to the subflow (ingest_ny_taxi).
+  - id: loader_chunk_size
+    type: INT
+    defaults: 50000
+    required: true
+
+  - id: loader_batch_size
+    type: INT
+    defaults: 100000
+    required: true
+
+tasks:
+  - id: foreach_month
+    type: io.kestra.plugin.core.flow.ForEach
+    # Iterate over the requested months (one subflow run per month).
+    values: "{{ inputs.months }}"
+
+    # Run sequentially to avoid overwhelming laptop resources / Postgres.
+    concurrencyLimit: 1
+
+    tasks:
+      - id: ingest_subflow
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: dtc.module02
+        flowId: ingest_ny_taxi
+
+        # wait=true: parent flow waits for each ingest to finish
+        # transmitFailed=true: fail-fast if any month fails
+        wait: true
+        transmitFailed: true
+
+        inputs:
+          taxi: "{{ inputs.taxi }}"
+          year: "{{ inputs.year }}"
+          # Current month from the ForEach iterator
+          month: "{{ taskrun.value }}"
+
+          if_exists: "{{ inputs.if_exists }}"
+          keep_local: "{{ inputs.keep_local }}"
+          loader_chunk_size: "{{ inputs.loader_chunk_size }}"
+          loader_batch_size: "{{ inputs.loader_batch_size }}"

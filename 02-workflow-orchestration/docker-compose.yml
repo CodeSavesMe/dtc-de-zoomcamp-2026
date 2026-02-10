@@ -1,0 +1,223 @@
+# ------------------------------------------------------------------------------
+# DTC Module 02 — Kestra + Postgres (Local Stack)
+#
+# Purpose
+# - Orchestrate ingestion with Kestra
+# - Use a dedicated Postgres for Kestra metadata
+# - Use a separate Postgres as the NY Taxi warehouse (ETL target)
+# - Optionally run pgAdmin + an ingestion utility container for debugging
+#
+# Architecture
+# - Postgres (warehouse): pgdatabase  → NY Taxi tables (e.g., green_tripdata_2021_01)
+# - Postgres (Kestra):    kestra_postgres → flows, executions, queues, schedules
+#
+# Networking
+# - Container → DB: pgdatabase:5432
+# - Host (Mac) → DB: localhost:${DB_PORT:-5432}
+#
+# Profiles
+# - default: Kestra + both Postgres instances
+# - tools:   pgAdmin + ingestionPipeline (utility container)
+#
+# Access
+# - Kestra UI: http://localhost:8080
+# - Kestra API: http://localhost:8081
+# - pgAdmin:  http://localhost:${PGADMIN_PORT:-8085} (tools profile)
+# ------------------------------------------------------------------------------
+
+name: dtc-module-02
+
+volumes:
+  ny_taxi_postgres_data:
+  kestra_postgres_data:
+  kestra_data:
+  kestra_workdir:
+
+networks:
+  dtc-net:
+    driver: bridge
+
+services:
+  # 1) Target Postgres (NY Taxi warehouse)
+  pgdatabase:
+    image: postgres:16
+    container_name: pg_ny_taxi
+    env_file: [ .env ]
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_PORT:-5432}:5432" # host -> container
+    volumes:
+      - ny_taxi_postgres_data:/var/lib/postgresql/data
+    # Optional tuning (list-form command for portability)
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=128MB"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "effective_cache_size=256MB"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks: [dtc-net]
+    # Resource limits (Compose spec)
+    cpus: 0.75
+    mem_limit: 900m
+
+  # 2) Kestra metadata Postgres
+  kestra_postgres:
+    image: postgres:16
+    container_name: kestra_postgres
+    env_file: [ .env ]
+    environment:
+      POSTGRES_DB: ${KESTRA_POSTGRES_DB}
+      POSTGRES_USER: ${KESTRA_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${KESTRA_POSTGRES_PASSWORD}
+    volumes:
+      - kestra_postgres_data:/var/lib/postgresql/data
+    # Optional tuning (list-form command for portability)
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=64MB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "effective_cache_size=128MB"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KESTRA_POSTGRES_USER} -d ${KESTRA_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks: [dtc-net]
+    cpus: 0.5
+    mem_limit: 512m
+
+  # 3) Kestra server (UI + API + worker)
+  kestra:
+    image: kestra/kestra:v1.1
+    container_name: kestra
+    pull_policy: if_not_present
+    user: "root"
+    command: server standalone
+    env_file: [ .env ]
+    volumes:
+      - kestra_data:/app/storage
+      - kestra_workdir:/tmp/kestra-wd
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      KESTRA_JAVA_OPTS: "-Xms256m -Xmx1024m"
+      KESTRA_CONFIGURATION: |
+        datasources:
+          postgres:
+            url: jdbc:postgresql://kestra_postgres:5432/${KESTRA_POSTGRES_DB}
+            driverClassName: org.postgresql.Driver
+            username: ${KESTRA_POSTGRES_USER}
+            password: ${KESTRA_POSTGRES_PASSWORD}
+        kestra:
+          server:
+            basicAuth:
+              username: "${KESTRA_ADMIN_EMAIL}"
+              password: "${KESTRA_ADMIN_PASSWORD}"
+          repository:
+            type: postgres
+          queue:
+            type: postgres
+          storage:
+            type: local
+            local:
+              basePath: "/app/storage"
+          tasks:
+            tmpDir:
+              path: /tmp/kestra-wd/tmp
+          url: http://localhost:8080/
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    depends_on:
+      pgdatabase:
+        condition: service_healthy
+      kestra_postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [dtc-net]
+    cpus: 1.25
+    mem_limit: 2g
+
+  # 4) pgAdmin (tools profile)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    env_file: [ .env ]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    ports:
+      - "${PGADMIN_PORT:-8085}:80"
+    depends_on:
+      pgdatabase:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [dtc-net]
+    profiles: ["tools"]
+    cpus: 0.5
+    mem_limit: 512m
+
+  # 5) Ingestion utility container (tools profile)
+  # - Uses the same image as Kestra tasks (ENV_INGEST_IMAGE)
+  # - Useful for manual runs / debugging inside the Docker network
+  ingestionPipeline:
+    image: "${ENV_INGEST_IMAGE}"
+    container_name: ingest-pipeline
+    env_file: [ .env ]
+    environment:
+      DB_HOST: "${ENV_DB_HOST}"
+      DB_PORT: "${ENV_DB_PORT}"
+    depends_on:
+      pgdatabase:
+        condition: service_healthy
+    networks: [dtc-net]
+    profiles: ["tools"]
+    command: ["sleep", "infinity"]
+    cpus: 0.5
+    mem_limit: 512m
+
+# ------------------------------------------------------------------------------
+# Docker Compose Cheatsheet
+#
+# Core stack
+# - Start:        docker compose up -d
+# - Stop:         docker compose down
+# - Full reset:   docker compose down -v   # ⚠️ deletes DB volumes
+# - Status:       docker compose ps
+# - Validate:     docker compose config
+#
+# Optional tools
+# - Start tools:  docker compose --profile tools up -d
+# - pgAdmin only: docker compose --profile tools up -d pgadmin
+#
+# Logs
+# - Kestra:       docker compose logs -f kestra
+# - Warehouse DB: docker compose logs -f pgdatabase
+# - Kestra DB:    docker compose logs -f kestra_postgres
+#
+# DB access
+# - In container: docker compose exec pgdatabase psql -U $DB_USER -d $DB_NAME
+# - From host:    psql -h localhost -p $DB_PORT -U $DB_USER -d $DB_NAME
+#
+# Connectivity
+# - Host tools:   localhost:${DB_PORT:-5432}
+# - Containers:   pgdatabase:5432
+# ------------------------------------------------------------------------------
