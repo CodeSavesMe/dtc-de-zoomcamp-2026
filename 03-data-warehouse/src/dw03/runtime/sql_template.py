@@ -1,23 +1,25 @@
 # src/dw03/runtime/sql_template.py
 from __future__ import annotations
 
-import re
+from typing import Any
 
-_PATTERN = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
+from jinja2 import Environment, StrictUndefined
 
 
-def render_sql_template(sql: str, variables: dict[str, str]) -> str:
+# Initialize Jinja2 environment with strict variable checking and whitespace control
+_ENV = Environment(
+    undefined=StrictUndefined,
+    autoescape=False,
+    trim_blocks=True,
+    lstrip_blocks=True,
+    keep_trailing_newline=True,
+)
+
+
+def render_sql_template(sql_text: str, variables: dict[str, Any]) -> str:
     """
-    Very small templating:
-      SELECT * FROM `{{project_id}}.{{dataset}}.table`
-
-    If a placeholder is missing -> raise (fail-fast).
+    Renders SQL with full Jinja2 support (logic, loops, and variables).
+    Uses StrictUndefined to raise an error immediately if a variable is missing.
     """
-
-    def repl(match: re.Match[str]) -> str:
-        key = match.group(1)
-        if key not in variables:
-            raise KeyError(f"Missing SQL template variable: '{key}'")
-        return str(variables[key])
-
-    return _PATTERN.sub(repl, sql)
+    template = _ENV.from_string(sql_text)
+    return template.render(**variables)

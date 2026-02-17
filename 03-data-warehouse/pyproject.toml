@@ -4,7 +4,7 @@
 name = "dtc-de-2026-module-03-data-warehouse"
 version = "0.1.0"
 description = "Module 03 - GCS + BigQuery (NYC Taxi) scripts"
-readme = "README.md"
+readme = "03-README.md"
 requires-python = ">=3.9"
 dependencies = [
   "click>=8.1",
@@ -13,6 +13,7 @@ dependencies = [
   "loguru>=0.7",
   "google-cloud-storage>=2.14",
   "google-cloud-bigquery>=3.0",
+  "jinja2>=3.1.6",
 ]
 
 [dependency-groups]

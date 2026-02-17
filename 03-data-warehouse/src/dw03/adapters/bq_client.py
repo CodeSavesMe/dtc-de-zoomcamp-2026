@@ -10,17 +10,12 @@ from loguru import logger
 
 @dataclass
 class BigQueryClient:
-    """
-    Beginner-friendly wrapper for google-cloud-bigquery Client.
-
-    - dry_run(sql)  -> returns estimated bytes scanned
-    - execute(sql)  -> runs query and returns job_id
-    """
     project_id: str
     location: str
     labels: Optional[dict[str, str]] = None
 
     def __post_init__(self) -> None:
+        """Initialize the BigQuery client."""
         self._client: bigquery.Client = bigquery.Client(
             project=self.project_id,
             location=self.location,
@@ -28,10 +23,11 @@ class BigQueryClient:
 
     @property
     def raw(self) -> bigquery.Client:
-        """Expose underlying SDK client when needed."""
+        """Access the underlying BigQuery client."""
         return self._client
 
     def dry_run(self, sql: str) -> int:
+        """Estimate query cost by returning total bytes processed."""
         job_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
         if self.labels:
             job_config.labels = self.labels
@@ -39,7 +35,11 @@ class BigQueryClient:
         job = self._client.query(sql, job_config=job_config)
         return int(job.total_bytes_processed or 0)
 
-    def execute(self, sql: str) -> str:
+    def execute_job(self, sql: str) -> bigquery.QueryJob:
+        """
+        Execute a query and wait for completion.
+        Returns the full QueryJob object to allow row fetching.
+        """
         job_config = bigquery.QueryJobConfig()
         if self.labels:
             job_config.labels = self.labels
@@ -47,4 +47,9 @@ class BigQueryClient:
         job = self._client.query(sql, job_config=job_config)
         logger.info("Waiting BigQuery job... (location={})", self.location)
         job.result()
+        return job
+
+    def execute(self, sql: str) -> str:
+        """Execute query and return only the job_id (Backward compatibility)."""
+        job = self.execute_job(sql)
         return job.job_id

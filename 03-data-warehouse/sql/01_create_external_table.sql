@@ -1,8 +1,7 @@
--- ------------------------------------------------------------
 -- 01_create_external_table.sql
--- Hive-partitioned external table over GCS Parquet:
---   gs://{{GCS_BUCKET_NAME}}/{{GCS_RAW_PREFIX}}/{{TAXI_COLOR}}/year=YYYY/month=MM/*.parquet
--- Uses single wildcard in uris + hive_partition_uri_prefix.
+-- ------------------------------------------------------------
+-- Create an external table partitioned via Hive (GCS Parquet).
+-- Data source: {{GCS_TRIP_ROOT}}/year=YYYY/month=MM/*.parquet
 -- ------------------------------------------------------------
 
 CREATE OR REPLACE EXTERNAL TABLE
@@ -13,7 +12,7 @@ WITH PARTITION COLUMNS (
 )
 OPTIONS (
   format = 'PARQUET',
-  uris = ['gs://{{GCS_BUCKET_NAME}}/{{GCS_RAW_PREFIX}}/{{TAXI_COLOR}}/*'],
-  hive_partition_uri_prefix = 'gs://{{GCS_BUCKET_NAME}}/{{GCS_RAW_PREFIX}}/{{TAXI_COLOR}}/',
+  uris = ['{{GCS_TRIP_GLOB}}'],
+  hive_partition_uri_prefix = '{{GCS_TRIP_HIVE_PREFIX}}',
   require_hive_partition_filter = FALSE
 );

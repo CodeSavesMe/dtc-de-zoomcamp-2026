@@ -11,42 +11,45 @@ from dotenv import load_dotenv
 
 
 def _split_csv(value: str) -> tuple[str, ...]:
+    """Splits a comma-separated string into a trimmed tuple."""
     return tuple(x.strip() for x in value.split(",") if x.strip())
 
 
 @dataclass(frozen=True)
 class AppSettings:
-    # --- core ---
+    # --- GCP Core ---
     gcp_project_id: str
     bq_location: str = "US"
 
-    # --- auth (optional; usually empty if ADC) ---
+    # --- Authentication ---
     google_application_credentials: str = ""
 
-    # --- gcs / taxi source ---
+    # --- GCS / Taxi Source ---
     gcs_bucket_name: str = ""
     gcs_raw_prefix: str = "raw/ny_taxi"
     taxi_color: str = "yellow"
     taxi_year: str = "2024"
     months: tuple[str, ...] = ("01", "02", "03", "04", "05", "06")
-    taxi_base_url: str = ""  # optional override
+    taxi_base_url: str = "" 
 
-    # --- bigquery datasets / tables ---
+    # --- BigQuery Dataset & Tables ---
     bq_dataset_staging: str = "staging"
     bq_dataset_final: str = "final"
     bq_table_ext: str = "ny_taxi_yellow_trip_2024_ext"
     bq_table_base: str = "ny_taxi_yellow_trip_2024_base"
     bq_table_final: str = "ny_taxi_yellow_trip_2024"
 
-    # --- sql runner ---
+    # --- SQL Runner Config ---
     sql_dir: str = "sql"
     sql_file: Optional[str] = None
     bq_dry_run: bool = True
+    sql_print_results: bool = False
+    sql_print_max_rows: int = 20
 
-    # --- runtime / logging ---
+    # --- Runtime & Logging ---
     log_dir: str = "./apps/logs"
 
-    # --- downloader runtime tuning (IMPORTANT) ---
+    # --- Downloader Tuning ---
     max_workers: int = 5
     max_retries: int = 3
     http_timeout_sec: int = 300
@@ -54,7 +57,8 @@ class AppSettings:
 
     @classmethod
     def from_env(cls, env_file: str = ".env") -> "AppSettings":
-        # resolve repo root
+        """Loads configuration from environment variables or .env file."""
+        # Resolve project root path
         project_root = Path(__file__).resolve().parents[3]
         env_path = project_root / env_file
         load_dotenv(env_path, override=False)
@@ -62,7 +66,7 @@ class AppSettings:
         project_id = os.environ.get("GCP_PROJECT_ID", "").strip()
         if not project_id:
             raise ValueError(
-                f"GCP_PROJECT_ID is required. Put it in {env_path} or export it in your shell."
+                f"GCP_PROJECT_ID is required in {env_path} or environment."
             )
 
         return cls(
@@ -100,6 +104,8 @@ class AppSettings:
             sql_dir=os.getenv("SQL_DIR", "sql").strip() or "sql",
             sql_file=os.getenv("SQL_FILE", "").strip() or None,
             bq_dry_run=os.getenv("BQ_DRY_RUN", "true").lower() in ("1", "true", "yes", "y"),
+            sql_print_results=os.getenv("SQL_PRINT_RESULTS", "false").lower() in ("1", "true", "yes", "y"),
+            sql_print_max_rows=max(0, int(os.getenv("SQL_PRINT_MAX_ROWS", "20"))),
 
             # --- runtime ---
             log_dir=os.getenv("LOG_DIR", "./apps/logs").strip() or "./apps/logs",
@@ -111,21 +117,74 @@ class AppSettings:
             gcs_chunk_size=int(os.getenv("GCS_CHUNK_SIZE", str(8 * 1024 * 1024))),
         )
 
+
     def to_template_vars(self) -> dict[str, str]:
-        """
-        Variables exposed to SQL templating.
-        Keep values as strings.
-        """
+        """Maps settings to variables for SQL Jinja2 templates."""
+        # Normalize GCS path prefix
+        raw_prefix = (self.gcs_raw_prefix or "").strip("/")
+        raw_prefix_slash = f"{raw_prefix}/" if raw_prefix else ""
+
+        # Construct base GCS paths
+        taxi_table_name = f"{self.taxi_color}_taxi"
+        gcs_trip_root = (
+            f"gs://{self.gcs_bucket_name}/"
+            f"{raw_prefix_slash}tlc_trip_record/{taxi_table_name}"
+        )
+
+        # Mapping: Pickup timestamp column by taxi type
+        pickup_col_by_color = {
+            "yellow": "tpep_pickup_datetime",
+            "green": "lpep_pickup_datetime",
+            "fhv": "pickup_datetime",
+        }
+        pickup_col = pickup_col_by_color.get(self.taxi_color, "pickup_datetime")
+
+        # Mapping: Cluster columns by taxi type
+        cluster_cols_by_color = {
+            "yellow": "PULocationID, DOLocationID, VendorID",
+            "green": "PULocationID, DOLocationID, VendorID",
+            "fhv": "dispatching_base_num",
+        }
+        cluster_cols = cluster_cols_by_color.get(self.taxi_color, "")
+
+        # Handling Schema Drift: Exclude problematic columns per dataset
+        except_cols = ""
+        if self.taxi_color == "green":
+            # Fix ehail_fee type mismatch (common in 2019 files)
+            except_cols = "ehail_fee"
+        elif self.taxi_color == "yellow":
+            # Fix airport_fee type mismatch for 2020+
+            try:
+                if int(self.taxi_year) >= 2020:
+                    except_cols = "airport_fee"
+            except (TypeError, ValueError):
+                pass
+
         return {
             "GCP_PROJECT_ID": self.gcp_project_id,
             "BQ_LOCATION": self.bq_location,
+
             "BQ_DATASET_STAGING": self.bq_dataset_staging,
             "BQ_DATASET_FINAL": self.bq_dataset_final,
             "BQ_TABLE_EXT": self.bq_table_ext,
             "BQ_TABLE_BASE": self.bq_table_base,
             "BQ_TABLE_FINAL": self.bq_table_final,
-            "GCS_BUCKET_NAME": self.gcs_bucket_name,
-            "GCS_RAW_PREFIX": self.gcs_raw_prefix,
+
             "TAXI_COLOR": self.taxi_color,
             "TAXI_YEAR": self.taxi_year,
+            "TAXI_TABLE_NAME": taxi_table_name,
+
+            "GCS_BUCKET_NAME": self.gcs_bucket_name,
+            "GCS_RAW_PREFIX": raw_prefix,
+
+            "GCS_TRIP_ROOT": gcs_trip_root,
+            "GCS_TRIP_GLOB": f"{gcs_trip_root}/*",
+            "GCS_TRIP_HIVE_PREFIX": f"{gcs_trip_root}/",
+
+            "TAXI_PICKUP_TS_COL": pickup_col,
+            "TAXI_CLUSTER_COLS": cluster_cols,
+            "TAXI_EXCEPT_COLS": except_cols,
+
+            # Legacy alias support
+            "GCS_TLC_URI_PREFIX": f"{gcs_trip_root}/",
         }
