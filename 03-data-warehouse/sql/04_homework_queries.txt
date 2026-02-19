@@ -5,54 +5,54 @@
 ---- - Use BASE table for "table" questions (non-partitioned)
 ---- - Use FINAL table for partition benefits (Q6)
 ---- - For external-table queries, use EXT table
---
----- Q1: Counting records (use BASE)
---SELECT COUNT(*) AS total_records
---FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`;
---
----- Q2: Data read estimation (run on EXT and BASE separately in the UI to compare bytes)
----- External table:
---SELECT COUNT(DISTINCT PULocationID) AS distinct_pu_location
---FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_ext }}`;
---
----- Materialized base table:
---SELECT COUNT(DISTINCT PULocationID) AS distinct_pu_location
---FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`;
---
----- Q3: Columnar storage scan difference (BASE only)
----- 1 column:
---SELECT PULocationID
---FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`;
---
----- 2 columns:
---SELECT PULocationID, DOLocationID
---FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`;
---
----- Q4: Counting zero fare trips (BASE)
---SELECT COUNT(*) AS zero_fare_trips
---FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`
---WHERE fare_amount = 0;
---
----- Q5: Partitioning and clustering strategy
----- (Already created by 03_create_optimized_table.sql)
---
----- Q6: Partition benefits (compare bytes on BASE vs FINAL)
----- BASE (non-partitioned):
---SELECT DISTINCT VendorID
---FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`
---WHERE DATE(tpep_dropoff_datetime) BETWEEN '2024-03-01' AND '2024-03-15';
---
----- FINAL (partitioned + clustered):
---SELECT DISTINCT VendorID
---FROM `{{ project_id }}.{{ dataset_final }}.{{ table_final }}`
---WHERE DATE(tpep_dropoff_datetime) BETWEEN '2024-03-01' AND '2024-03-15';
---
----- Q7: External table storage (conceptual, no query)
----- Answer: data is stored in GCS.
---
----- Q8: Clustering best practice (conceptual)
----- Answer: False (cluster only when it matches access patterns).
---
----- Q9: Table scan bytes (BASE)
---SELECT COUNT(*) AS total_records
---FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`;
+
+-- Q1: Counting records (use BASE)
+SELECT COUNT(*) AS total_records
+FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`;
+
+-- Q2: Data read estimation (run on EXT and BASE separately in the UI to compare bytes)
+-- External table:
+SELECT COUNT(DISTINCT PULocationID) AS distinct_pu_location
+FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_ext }}`;
+
+-- Materialized base table:
+SELECT COUNT(DISTINCT PULocationID) AS distinct_pu_location
+FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`;
+
+-- Q3: Columnar storage scan difference (BASE only)
+-- 1 column:
+SELECT PULocationID
+FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`;
+
+-- 2 columns:
+SELECT PULocationID, DOLocationID
+FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`;
+
+-- Q4: Counting zero fare trips (BASE)
+SELECT COUNT(*) AS zero_fare_trips
+FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`
+WHERE fare_amount = 0;
+
+-- Q5: Partitioning and clustering strategy
+-- (Already created by 03_create_optimized_table.sql)
+
+-- Q6: Partition benefits (compare bytes on BASE vs FINAL)
+-- BASE (non-partitioned):
+SELECT DISTINCT VendorID
+FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`
+WHERE DATE(tpep_dropoff_datetime) BETWEEN '2024-03-01' AND '2024-03-15';
+
+-- FINAL (partitioned + clustered):
+SELECT DISTINCT VendorID
+FROM `{{ project_id }}.{{ dataset_final }}.{{ table_final }}`
+WHERE DATE(tpep_dropoff_datetime) BETWEEN '2024-03-01' AND '2024-03-15';
+
+-- Q7: External table storage (conceptual, no query)
+-- Answer: data is stored in GCS.
+
+-- Q8: Clustering best practice (conceptual)
+-- Answer: False (cluster only when it matches access patterns).
+
+-- Q9: Table scan bytes (BASE)
+SELECT COUNT(*) AS total_records
+FROM `{{ project_id }}.{{ dataset_staging }}.{{ table_base }}`;
