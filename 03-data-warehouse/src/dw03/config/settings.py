@@ -150,15 +150,11 @@ class AppSettings:
         # Handling Schema Drift: Exclude problematic columns per dataset
         except_cols = ""
         if self.taxi_color == "green":
-            # Fix ehail_fee type mismatch (common in 2019 files)
+            # Fix ehail_fee type mismatch (common in 2019/2020 files)
             except_cols = "ehail_fee"
         elif self.taxi_color == "yellow":
-            # Fix airport_fee type mismatch for 2020+
-            try:
-                if int(self.taxi_year) >= 2020:
-                    except_cols = "airport_fee"
-            except (TypeError, ValueError):
-                pass
+            # Fix airport_fee type mismatch (inconsistent INT32/DOUBLE across 2019 and 2020)
+            except_cols = "airport_fee"
 
         return {
             "GCP_PROJECT_ID": self.gcp_project_id,
