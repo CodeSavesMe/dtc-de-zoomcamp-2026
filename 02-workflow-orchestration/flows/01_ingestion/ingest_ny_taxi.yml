@@ -1,0 +1,126 @@
+# flows/01_ingestion/ingest_ny_taxi.yml
+
+id: ingest_ny_taxi
+namespace: dtc.module02
+description: >
+  Ingest a single month of NYC TLC taxi data into Postgres using the ingestion_pipeline Docker image.
+  The ingestion app handles staging, validation, and atomic swap internally.
+
+labels:
+  app: ny-taxi
+  component: ingestion
+
+inputs:
+  - id: taxi
+    type: SELECT
+    values: ["yellow", "green"]
+    defaults: "green"
+    required: true
+
+  - id: year
+    type: INT
+    defaults: 2021
+    required: true
+
+  - id: month
+    type: STRING
+    defaults: "01"
+    required: true
+
+  - id: file_format
+    type: SELECT
+    values: ["csv", "parquet", "tsv"]
+    defaults: "csv"
+    required: true
+
+  - id: if_exists
+    type: SELECT
+    values: ["replace", "skip", "fail", "append"]
+    defaults: "replace"
+    required: true
+
+  - id: keep_local
+    type: BOOL
+    defaults: false
+    required: true
+
+  - id: loader_chunk_size
+    type: INT
+    defaults: 50000
+    required: true
+
+  - id: loader_batch_size
+    type: INT
+    defaults: 100000
+    required: true
+
+variables:
+  target_table: "{{ inputs.taxi }}_tripdata_{{ inputs.year }}_{{ inputs.month }}"
+
+tasks:
+  - id: ingest
+    type: io.kestra.plugin.scripts.shell.Commands
+
+    # `envs.*` exposes container environment variables.
+    # Kestra strips the `ENV_` prefix and lowercases the name:
+    #   ENV_INGEST_IMAGE   -> envs.ingest_image
+    #   ENV_DOCKER_NETWORK -> envs.docker_network
+    containerImage: "{{ envs.ingest_image }}"
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      networkMode: "{{ envs.docker_network }}"
+
+    env:
+      # Same rule applies here:
+      #   ENV_DB_HOST     -> envs.db_host
+      #   ENV_DB_PASSWORD -> envs.db_password
+      DB_HOST: "{{ envs.db_host }}"
+      DB_PORT: "{{ envs.db_port }}"
+      DB_USER: "{{ envs.db_user }}"
+      DB_PASSWORD: "{{ envs.db_password }}"
+      DB_NAME: "{{ envs.db_name }}"
+      DB_SCHEMA: "{{ envs.db_schema }}"
+
+      # Ingestion parameters consumed by `/app/main.py`
+      TAXI: "{{ inputs.taxi }}"
+      YEAR: "{{ inputs.year }}"
+      MONTH: "{{ inputs.month }}"
+      FILE_FORMAT: "{{ inputs.file_format }}"
+      IF_EXISTS: "{{ inputs.if_exists }}"
+      KEEP_LOCAL: "{{ inputs.keep_local }}"
+
+      # Loader tuning (read from env by config.py)
+      LOADER_CHUNK_SIZE: "{{ inputs.loader_chunk_size }}"
+      LOADER_BATCH_SIZE: "{{ inputs.loader_batch_size }}"
+
+      # Keep Kestra logs clean
+      ENABLE_PROGRESS: "false"
+      LOG_LEVEL: "INFO"
+
+    commands:
+      - |
+        set -e
+        echo "Ingesting: taxi={{ inputs.taxi }}, year={{ inputs.year }}, month={{ inputs.month }}"
+        echo "Expected table: {{ vars.target_table }}"
+        python /app/main.py ingest
+
+    timeout: PT45M
+    retry:
+      type: exponential
+      maxAttempt: 3
+      interval: PT30S
+      maxInterval: PT5M
+
+outputs:
+  - id: table
+    type: STRING
+    value: "{{ vars.target_table }}"
+  - id: taxi
+    type: STRING
+    value: "{{ inputs.taxi }}"
+  - id: year
+    type: INT
+    value: "{{ inputs.year }}"
+  - id: month
+    type: STRING
+    value: "{{ inputs.month }}"
